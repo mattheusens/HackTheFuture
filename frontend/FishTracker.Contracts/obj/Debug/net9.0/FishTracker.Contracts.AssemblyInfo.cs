@@ -14,7 +14,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("FishTracker.Contracts")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+2b3ddf8ad46e5c397eec3a2f9c4b1ed43df778b9")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+588b9c4bef6264ab8331a3f832843d6e341172b6")]
 [assembly: System.Reflection.AssemblyProductAttribute("FishTracker.Contracts")]
 [assembly: System.Reflection.AssemblyTitleAttribute("FishTracker.Contracts")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

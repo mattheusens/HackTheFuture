@@ -6,11 +6,12 @@
   },
   "dependencies": {
     "@hono/swagger-ui": "^0.5.2",
+    "dotenv": "^17.2.3",
     "hono": "^4.8.10",
     "mongoose": "^8.16.5",
     "openai": "^5.16.0",
-    "zod": "^4.0.14",
-    "sharp": "^0.33.0"
+    "sharp": "^0.33.0",
+    "zod": "^4.0.14"
   },
   "devDependencies": {
     "@types/bun": "latest"

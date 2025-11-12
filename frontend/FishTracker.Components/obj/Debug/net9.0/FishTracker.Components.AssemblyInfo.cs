@@ -14,7 +14,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("FishTracker.Components")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+2b3ddf8ad46e5c397eec3a2f9c4b1ed43df778b9")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+ff2d499f233379bdda9b10603718af62743f8a3b")]
 [assembly: System.Reflection.AssemblyProductAttribute("FishTracker.Components")]
 [assembly: System.Reflection.AssemblyTitleAttribute("FishTracker.Components")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

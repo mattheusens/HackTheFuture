@@ -55,28 +55,26 @@ export const handleFishDetection = async (image: ArrayBuffer, deviceId: string) 
         }
 
         // Parse the response
-        let detectionResult;
+        let detectionResult: any;
         try {
-            // Clean JSON response
+            // Clean JSON response similar to other processors
             let cleaned = content.trim();
-            if (cleaned.startsWith('```json')) {
-                cleaned = cleaned.replace(/^```json\s*/, '').replace(/\s*```$/, '');
-            } else if (cleaned.startsWith('```')) {
-                cleaned = cleaned.replace(/^```\s*/, '').replace(/\s*```$/, '');
-            }
+            const tripleJson = /^```(?:json\s*)?([\s\S]*?)```$/i;
+            const tripleMatch = cleaned.match(tripleJson);
+            if (tripleMatch && tripleMatch[1]) cleaned = tripleMatch[1].trim();
+            // If there is surrounding backticks
+            if (cleaned.startsWith('```')) cleaned = cleaned.replace(/^```\s*/, '').replace(/\s*```$/, '');
+
             detectionResult = JSON.parse(cleaned);
         } catch (parseError) {
-            // If parsing fails, assume fish detected and proceed
-            console.warn('Failed to parse detection response, proceeding with processing:', parseError);
-            detectionResult = { hasFish: true, confidence: 0.7 };
+            // If parsing fails, assume fish detected but mark lower confidence so we can filter
+            console.warn('Failed to parse detection response, proceeding with conservative detection:', parseError);
+            detectionResult = { hasFish: true, confidence: 0.6, description: 'Unparsed AI response' };
         }
 
-        // TODO: Filter fish detections based on confidence scores.
-        // Only process detections above a certain confidence threshold to avoid false positives.
-        // YOU NEED TO IMPLEMENT THIS HERE
-        
-        // PLACEHOLDER: Accept all detections - proper confidence filtering needed
-        if (!detectionResult.hasFish) {
+        // Filter detections based on a configurable confidence threshold
+        const CONFIDENCE_THRESHOLD = Number(process.env.FISH_DETECTION_CONFIDENCE || Bun.env.FISH_DETECTION_CONFIDENCE || 0.6);
+        if (!detectionResult.hasFish || (typeof detectionResult.confidence === 'number' && detectionResult.confidence < CONFIDENCE_THRESHOLD)) {
             return createSuccessResponse({
                 fishDetected: false,
                 data: [],
@@ -84,23 +82,43 @@ export const handleFishDetection = async (image: ArrayBuffer, deviceId: string) 
             }, "Successfully processed image but no fish detected");
         }
 
-        // Process the image asynchronously (fire and forget)
-        // TODO: Students - You can make this synchronous by awaiting if you want immediate feedback
-        processFishImageSimple(image, deviceId).catch((error) => {
-            console.error('Error processing fish image:', error);
-        });
-
-        return createSuccessResponse({
-            fishDetected: true,
-            data: [{
-                confidence: detectionResult.confidence || 0.8,
-                description: detectionResult.description || "Fish detected in image"
-            }],
-        }, "Fish detected! Processing image in background...");
+        // Process the image either synchronously or asynchronously based on env var
+        const PROCESS_SYNC = (process.env.PROCESS_IMAGES_SYNC || Bun.env.PROCESS_IMAGES_SYNC || 'false').toLowerCase() === 'true';
+        if (PROCESS_SYNC) {
+            try {
+                await processFishImageSimple(image, deviceId);
+            } catch (err) {
+                console.error('Error processing fish image (sync):', err);
+                return createErrorResponse({ message: 'Failed to process detected fish image' });
+            }
+            return createSuccessResponse({
+                fishDetected: true,
+                data: [{
+                    confidence: detectionResult.confidence || 0.8,
+                    description: detectionResult.description || "Fish detected in image"
+                }],
+            }, "Fish detected and processed synchronously");
+        } else {
+            // Fire-and-forget (async)
+            processFishImageSimple(image, deviceId).catch((error) => {
+                console.error('Error processing fish image (async):', error);
+            });
+            return createSuccessResponse({
+                fishDetected: true,
+                data: [{
+                    confidence: detectionResult.confidence || 0.8,
+                    description: detectionResult.description || "Fish detected in image"
+                }],
+            }, "Fish detected! Processing image in background...");
+        }
     } catch (error) {
+        console.error('OpenAI Vision error in detection:', error instanceof Error ? error.stack || error.message : error);
+        // Include detailed error in non-production / when DEBUG env is set to help debugging
+        const debug = (process.env.DEBUG || Bun.env.DEBUG || 'false').toLowerCase() === 'true';
+        const detail = error instanceof Error ? (debug ? error.stack || error.message : error.message) : String(error);
         return createErrorResponse({
             message: "OpenAI Vision API error",
-            error: error instanceof Error ? error.message : error
+            detail
         });
     }
 };

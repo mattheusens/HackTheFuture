@@ -1,6 +1,15 @@
 import OpenAI from 'openai';
 import { writeFile, mkdir } from 'fs/promises';
 import { existsSync } from 'fs';
+// Attempt to import sharp if available for image optimization
+let sharp: any = null;
+try {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  sharp = require('sharp');
+} catch (e) {
+  // sharp not installed, will fallback to saving raw image
+  sharp = null;
+}
 
 // Prompts moved from Azure Functions
 const fishNameSystemPrompt = `
@@ -67,26 +76,62 @@ async function saveImageLocally(imageBuffer: ArrayBuffer, deviceId: string): Pro
     await mkdir(uploadDir, { recursive: true });
   }
   
-  // TODO: Optimize images before saving to reduce storage space.
-  // Consider resizing large images and compressing them while maintaining quality.
-  // You may want to use the 'sharp' library that's already in dependencies.
-  // YOU NEED TO IMPLEMENT THIS HERE
-  // Currently saves image as-is without optimization
-  
+  // Optimize images before saving when possible (use sharp)
   const fileName = `${Date.now()}_${crypto.randomUUID()}.jpg`;
   const filePath = `${uploadDir}/${fileName}`;
-  await writeFile(filePath, Buffer.from(imageBuffer));
+
+  try {
+    if (sharp) {
+      // Resize large images to a max width of 1600px and compress
+      await sharp(Buffer.from(imageBuffer))
+        .resize({ width: 1600, withoutEnlargement: true })
+        .jpeg({ quality: 80 })
+        .toFile(filePath);
+    } else {
+      await writeFile(filePath, Buffer.from(imageBuffer));
+    }
+  } catch (e) {
+    // Fallback: write raw buffer
+    console.warn('Image optimization failed, saving raw file', e);
+    await writeFile(filePath, Buffer.from(imageBuffer));
+  }
   
   // Return path relative to storage root for API serving
   return `${deviceId}/${fileName}`;
 }
 
 function cleanJsonResponse(response: string): string {
-  // TODO: Clean AI responses that may be wrapped in markdown code blocks.
-  // The AI sometimes returns JSON wrapped in ```json blocks that need to be removed before parsing.
-  // YOU NEED TO IMPLEMENT THIS HERE
-  // Currently returns response as-is - may fail if wrapped in markdown
-  return response.trim();
+  if (!response || typeof response !== 'string') return '';
+  let s = response.trim();
+
+  // Remove triple backtick fenced code blocks (```json or ```)
+  const tripleFence = /^```(?:json\s*)?([\s\S]*?)```$/i;
+  const tripleMatch = s.match(tripleFence);
+  if (tripleMatch && tripleMatch[1]) {
+    s = tripleMatch[1].trim();
+  }
+
+  // Remove single-line backticks
+  if (s.startsWith('`') && s.endsWith('`')) {
+    s = s.slice(1, -1).trim();
+  }
+
+  // Extract JSON substring from first { or [ to last matching } or ]
+  const firstBrace = s.indexOf('{');
+  const firstBracket = s.indexOf('[');
+  const startIdx = (firstBrace === -1) ? firstBracket : (firstBracket === -1 ? firstBrace : Math.min(firstBrace, firstBracket));
+  if (startIdx > -1) {
+    // Find last occurrence of matching bracket
+    const lastBrace = s.lastIndexOf('}');
+    const lastBracket = s.lastIndexOf(']');
+    const endIdx = Math.max(lastBrace, lastBracket);
+    if (endIdx > startIdx) {
+      s = s.substring(startIdx, endIdx + 1).trim();
+    }
+  }
+
+  // Remove any leading/trailing non-printable characters
+  return s.trim();
 }
 
 export async function processFishImageSimple(
@@ -130,13 +175,18 @@ export async function processFishImageSimple(
       temperature: 0.1
     });
 
-    const nameContent = nameResponse.choices[0].message.content;
+  const nameContent = nameResponse.choices[0]?.message?.content ?? (nameResponse as any).choices[0]?.text;
     if (!nameContent) {
       throw new Error('No response from OpenAI for fish name');
     }
 
     const cleanedNameResponse = cleanJsonResponse(nameContent);
-    const nameData = JSON.parse(cleanedNameResponse);
+    let nameData: any;
+    try {
+      nameData = JSON.parse(cleanedNameResponse);
+    } catch (e) {
+      throw new Error('Failed to parse fish name JSON from AI response');
+    }
     const fishName = nameData.fishName;
 
     if (!fishName) {
@@ -210,14 +260,19 @@ export async function processFishImageSimple(
       temperature: 0.3
     });
 
-    const enrichmentContent = enrichmentResponse.choices[0].message.content;
+  const enrichmentContent = enrichmentResponse.choices[0]?.message?.content ?? (enrichmentResponse as any).choices[0]?.text;
     if (!enrichmentContent) {
       throw new Error('No response from OpenAI for fish enrichment');
     }
 
     const cleanedEnrichmentResponse = cleanJsonResponse(enrichmentContent);
     console.log('Cleaned enrichment response:', cleanedEnrichmentResponse);
-    const enrichmentData = JSON.parse(cleanedEnrichmentResponse);
+    let enrichmentData: any;
+    try {
+      enrichmentData = JSON.parse(cleanedEnrichmentResponse);
+    } catch (e) {
+      throw new Error('Failed to parse enrichment JSON from AI response');
+    }
     
     // TODO: Extract fish data from the AI response structure.
     // The AI may return data in different formats - ensure you handle the response structure correctly.
@@ -227,7 +282,7 @@ export async function processFishImageSimple(
     // PLACEHOLDER: Assume flat structure - may fail if nested
     const fishData = enrichmentData.fishData || enrichmentData;
     if (!fishData || typeof fishData !== 'object') {
-      throw new Error('YOU NEED TO IMPLEMENT PROPER DATA EXTRACTION FROM AI RESPONSE');
+      throw new Error('Invalid fish data returned from AI');
     }
 
     // Step 4: Register fish and add to device
@@ -272,14 +327,10 @@ export async function processFishImageSimple(
       }
     }
   } catch (error) {
-    // TODO: Implement proper error handling for the image processing pipeline.
-    // Consider what should happen if OpenAI API calls fail, if image saving fails, or if API calls to register fish fail.
-    // Should you retry? Should you log specific errors? Should you notify the user?
-    // YOU NEED TO IMPLEMENT THIS HERE
-    
-    console.error('Error in fish enrichment process - YOU NEED TO IMPLEMENT PROPER ERROR HANDLING:', error);
-    // PLACEHOLDER: Just throw error - proper error handling needed
-    throw new Error(`Image processing failed - YOU NEED TO IMPLEMENT PROPER ERROR HANDLING: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    console.error('Error in fish enrichment process:', error instanceof Error ? error.stack || error.message : error);
+    // Re-throw the original error message with a normalized prefix so callers can handle it gracefully
+    const msg = error instanceof Error ? (error.stack || error.message) : String(error);
+    throw new Error(`Image processing failed: ${msg}`);
   }
 }
 

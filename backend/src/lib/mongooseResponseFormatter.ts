@@ -13,17 +13,32 @@ export interface ApiResponse<T = any> {
 }
 
 export function formatMongooseError(error: any): Array<{ field: string; message: string; code?: string }> {
-  // TODO: Format different types of Mongoose errors into a consistent API response format.
-  // Handle validation errors, cast errors, and duplicate key errors appropriately.
-  // Check for MongooseError.ValidationError, MongooseError.CastError, and duplicate key errors (code 11000).
-  // YOU NEED TO IMPLEMENT THIS HERE
-  
-  // PLACEHOLDER: Return generic error message
-  return [{
-    field: 'general',
-    message: error.message || 'An unknown error occurred - YOU NEED TO IMPLEMENT PROPER ERROR FORMATTING',
-    code: 'GenericError'
-  }];
+  // Handle Mongoose ValidationError
+  if (!error) {
+    return [{ field: 'general', message: 'Unknown error', code: 'Unknown' }];
+  }
+
+  if (error.name === 'ValidationError' && error.errors) {
+    return Object.keys(error.errors).map((field) => ({
+      field,
+      message: error.errors[field].message || 'Validation error',
+      code: error.errors[field].kind || 'ValidationError'
+    }));
+  }
+
+  // CastError (invalid ObjectId etc.)
+  if (error.name === 'CastError') {
+    return [{ field: error.path || 'id', message: `Invalid ${error.path}: ${error.value}`, code: 'CastError' }];
+  }
+
+  // Duplicate key (unique index) - e.g., code 11000
+  if (error.code === 11000 && error.keyValue) {
+    const field = Object.keys(error.keyValue)[0];
+    return [{ field: field || 'unknown', message: `Duplicate value for ${field}`, code: 'DuplicateKey' }];
+  }
+
+  // Fallback
+  return [{ field: 'general', message: error.message || String(error), code: error.code ? String(error.code) : 'Error' }];
 }
 
 export function createSuccessResponse<T>(data: T, message: string = 'Operation successful'): ApiResponse<T> {

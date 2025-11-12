@@ -11,31 +11,35 @@ export const deviceFindValidation = z.object({
 
 
 export const validateDeviceId = (id: string): {id: string | null, success: boolean, error: FormattedError | null} => {
-    // TODO: Validate device IDs to ensure they meet certain criteria (e.g., non-empty string, proper format).
-    // Return appropriate error messages for invalid IDs.
-    // YOU NEED TO IMPLEMENT THIS HERE
-    
-    // PLACEHOLDER: Basic check only - returns error for empty strings
-    if (!id || id.trim().length === 0) {
+    // Use Zod schema to validate the id
+    const parsed = deviceFindValidation.safeParse({ id });
+    if (!parsed.success) {
+        // format the zod error into our FormattedError structure
         return {
-            error: {
-                success: false,
-                message: "Device ID validation not fully implemented - YOU NEED TO IMPLEMENT THIS HERE",
-                errors: [{
-                    field: "id",
-                    message: "Device ID cannot be empty",
-                    code: "ValidationError"
-                }]
-            },
             id: null,
             success: false,
-        }
+            error: formatZodError(parsed.error)
+        };
     }
-    
-    // Basic placeholder - proper validation needed
+
+    // Enforce additional constraints: length and allowed characters
+    const cleanId = parsed.data.id.trim();
+    const idRegex = /^[A-Za-z0-9_-]{5,64}$/; // allow letters, numbers, underscore, dash
+    if (!idRegex.test(cleanId)) {
+        return {
+            id: null,
+            success: false,
+            error: {
+                success: false,
+                message: 'Device ID must be 5-64 chars, only letters, numbers, - and _ allowed',
+                errors: [{ field: 'id', message: 'Invalid device id format', code: 'ValidationError' }]
+            }
+        };
+    }
+
     return {
         error: null,
-        id: id.trim(),
+        id: cleanId,
         success: true
-    }
+    };
 }

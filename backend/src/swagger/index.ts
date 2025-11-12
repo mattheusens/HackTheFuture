@@ -5,6 +5,10 @@ export const openApiDoc = {
         version: "1.0.0",
         description: "API documentation for FishTracker - A fish detection and tracking system",
     },
+    // Ensure Swagger UI uses the API basePath the server is mounted on
+    servers: [
+        { url: '/api', description: 'API base path' }
+    ],
     tags: [
         {
             name: "General",

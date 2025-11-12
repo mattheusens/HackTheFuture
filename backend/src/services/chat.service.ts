@@ -4,14 +4,21 @@ import OpenAI from 'openai';
 
 export async function getFishDataAndChat(deviceIdentifier: string, userMessage: string): Promise<ApiResponse<any>> {
   try {
-    // TODO: Validate the user message before processing.
-    // Check if the message is not empty, not too long, and contains valid content.
-    // Return appropriate error messages for invalid input.
-    // YOU NEED TO IMPLEMENT THIS HERE
-    
-    // PLACEHOLDER: Basic check only
-    if (!userMessage || userMessage.trim().length === 0) {
-      return createErrorResponse({ message: 'Message validation not fully implemented - YOU NEED TO IMPLEMENT THIS HERE' }, 'Message cannot be empty');
+    // Validate the user message before processing.
+    // - non-empty
+    // - max length
+    // - reasonable characters
+    const trimmedMessage = typeof userMessage === 'string' ? userMessage.trim() : '';
+    const MAX_MESSAGE_LENGTH = 2000;
+    if (!trimmedMessage) {
+      return createErrorResponse({ message: 'Message cannot be empty' }, 'Message validation failed');
+    }
+    if (trimmedMessage.length > MAX_MESSAGE_LENGTH) {
+      return createErrorResponse({ message: `Message exceeds maximum length of ${MAX_MESSAGE_LENGTH}` }, 'Message validation failed');
+    }
+    // Basic content check: avoid binary/control chars
+    if (/\p{C}/u.test(trimmedMessage)) {
+      return createErrorResponse({ message: 'Message contains invalid characters' }, 'Message validation failed');
     }
     
     // Get device and populate fish data
@@ -25,20 +32,20 @@ export async function getFishDataAndChat(deviceIdentifier: string, userMessage: 
       return createErrorResponse({ message: 'No fish data found for this device' }, 'No fish data available');
     }
 
-    // TODO: Format fish data for the AI in a structured way that the AI can understand.
-    // Extract relevant information from each fish entry and format it appropriately.
-    // Consider what fields are most important for answering questions about the fish.
-    // YOU NEED TO IMPLEMENT THIS HERE
-    
-    // PLACEHOLDER: Basic formatting - proper structure needed
+    // Format fish data for the AI in a structured way.
     const fishData = device.fish.map(fishEntry => {
-      const fish = fishEntry.fish as any;
-      // TODO: Select and format the most relevant fish properties for the AI context
+      const fish = (fishEntry.fish as any) || {};
       return {
-        name: fish.name || "Unknown",
-        // YOU NEED TO IMPLEMENT PROPER FISH DATA FORMATTING HERE
-        // Consider including: family, size, water type, description, habitat, conservation status, etc.
-        basicInfo: "YOU NEED TO IMPLEMENT PROPER FISH DATA FORMATTING"
+        id: fish._id,
+        name: fish.name || 'Unknown',
+        family: fish.family || 'Unknown',
+        size: fish.size ? { min: fish.size.min ?? null, max: fish.size.max ?? null } : null,
+        waterType: fish.waterType || null,
+        habitat: fish.habitat || null,
+        diet: fish.diet || null,
+        conservationStatus: fish.conservationStatus || null,
+        description: fish.description || null,
+        images: Array.isArray(fish.images) ? fish.images.map((i: any) => i.url || i) : []
       };
     });
 
@@ -54,56 +61,136 @@ export async function getFishDataAndChat(deviceIdentifier: string, userMessage: 
 
     const modelName = "gpt-4o";
 
-    // TODO: Create a system message that provides context to the AI about the detected fish.
-    // The system message should include all relevant fish data in a format the AI can understand.
-    // Consider how to structure the information clearly and what instructions to give the AI.
-    // YOU NEED TO IMPLEMENT THIS HERE
-    
-    // PLACEHOLDER: Basic system message - proper context building needed
-    const systemMessage = `You are a helpful assistant. 
-    Fish data: ${JSON.stringify(fishData)}
-    YOU NEED TO IMPLEMENT PROPER SYSTEM MESSAGE CONSTRUCTION HERE.
-    The system message should provide context about detected fish and instruct the AI on how to respond.`;
+  // Construct a clear system message with structured fish data
+  const systemMessage = `You are an expert assistant that answers questions about detected fish. Only use the provided fish data and do not invent detections. Provide concise, factual answers. If the question is unrelated, respond that you can only answer about the listed fish.
+
+Detected fish (one per line):
+${fishData.map(f => `- ${f.name} (id: ${f.id || 'N/A'}) | family: ${f.family || 'N/A'} | size: ${f.size ? `${f.size.min ?? '?'}-${f.size.max ?? '?' } cm` : 'N/A'} | waterType: ${f.waterType || 'N/A'}`).join('\n')}
+
+When you return structured data (JSON), respond only with a JSON object or array. If you provide explanatory text, put it in plain text after the JSON. Do not include markdown formatting.`;
 
     // Get AI response
-    const response = await client.chat.completions.create({
-      model: modelName,
-      messages: [
-        { role: "system", content: systemMessage },
-        { role: "user", content: userMessage }
-      ],
-      max_tokens: 1000,
-      temperature: 0.7
-    });
+    // Helper: call OpenAI with retries for transient errors
+    const callOpenAIWithRetries = async (attempts = 3, backoffMs = 500) => {
+      let lastErr: any = null;
+      for (let i = 0; i < attempts; i++) {
+        try {
+          return await client.chat.completions.create({
+            model: modelName,
+            messages: [
+              { role: "system", content: systemMessage },
+              { role: "user", content: userMessage }
+            ],
+            max_tokens: 1000,
+            temperature: 0.7
+          });
+        } catch (err: any) {
+          lastErr = err;
+          const status = err?.status || err?.statusCode || err?.response?.status;
+          // Retry on 429 or 5xx or networking issues
+          const shouldRetry = !status || status === 429 || (status >= 500 && status < 600);
+          console.warn(`OpenAI call failed (attempt ${i + 1}/${attempts})`, { status, message: err?.message });
+          if (!shouldRetry) throw err;
+          await new Promise(r => setTimeout(r, backoffMs * Math.pow(2, i)));
+        }
+      }
+      throw lastErr;
+    };
 
-    // TODO: Extract and validate the AI response properly.
-    // Handle cases where the response might be null, empty, or malformed.
-    // Consider what should happen if the AI doesn't return a valid response.
-    // YOU NEED TO IMPLEMENT THIS HERE
-    
-    // PLACEHOLDER: Basic extraction - proper validation needed
-    const aiResponse = response.choices[0]?.message?.content;
-    
-    if (!aiResponse) {
-      return createErrorResponse({ message: 'AI response extraction not fully implemented - YOU NEED TO IMPLEMENT THIS HERE' }, 'No response received from AI');
+    const response = await callOpenAIWithRetries();
+
+  // Robust AI response extraction & validation
+    // - ensure choices exist
+    // - extract message content safely
+    // - clean common markdown wrappers (```json, ```)
+    // - attempt JSON.parse when it looks like JSON, otherwise return cleaned text
+    // - provide clear error responses when parsing/extraction fails
+    const choice = Array.isArray((response as any).choices) && (response as any).choices[0];
+    const rawContent = choice?.message?.content ?? choice?.text ?? null;
+
+    if (!rawContent || (typeof rawContent === 'string' && rawContent.trim().length === 0)) {
+      console.warn('AI returned empty response', { response });
+      return createErrorResponse({ message: 'Empty response from AI' }, 'No response received from AI');
     }
 
-    return createSuccessResponse({
-      response: aiResponse
-    }, 'Successfully processed chat request');
+    // Helper: clean markdown code fences and trim
+    const cleanAIContent = (input: string) => {
+      let s = input.trim();
 
-  } catch (error) {
-    // TODO: Implement proper error handling for the chat service.
-    // Consider different types of errors: API errors, network errors, validation errors, etc.
-    // Provide meaningful error messages to help debug issues.
-    // Should you retry on certain errors? Should you log specific error details?
-    // YOU NEED TO IMPLEMENT THIS HERE
-    
-    // PLACEHOLDER: Generic error handling - proper error handling needed
-    console.error('Chat service error - YOU NEED TO IMPLEMENT PROPER ERROR HANDLING:', error);
-    return createErrorResponse(
-      { message: `Chat processing failed - YOU NEED TO IMPLEMENT PROPER ERROR HANDLING: ${error instanceof Error ? error.message : 'Unknown error'}` },
-      'Failed to process chat request'
+      // Remove triple-backtick blocks and return inner content if present
+      // Handles ```json\n...\n``` or ```\n...\n```
+      const tripleFenceMatch = s.match(/```(?:json\s*)?([\s\S]*)```$/i);
+      if (tripleFenceMatch && tripleFenceMatch[1]) {
+        s = tripleFenceMatch[1].trim();
+      }
+
+      // If wrapped in single backticks `...`, remove them
+      if (s.startsWith('`') && s.endsWith('`')) {
+        s = s.slice(1, -1).trim();
+      }
+
+      // Some AIs include markdown blockquotes or language tags like ```json\n{...}\n``` - already handled above
+      return s;
+    };
+
+  const cleaned = typeof rawContent === 'string' ? cleanAIContent(rawContent) : String(rawContent);
+
+    // Try to parse JSON if it looks like JSON
+    let parsed: any = null;
+    let parsedSuccessfully = false;
+    const looksLikeJson = cleaned.startsWith('{') || cleaned.startsWith('[');
+    if (looksLikeJson) {
+      try {
+        parsed = JSON.parse(cleaned);
+        parsedSuccessfully = true;
+      } catch (e) {
+        // If parsing fails, try a relaxed parse: strip trailing commas
+        try {
+          const relaxed = cleaned.replace(/,\s*}/g, '}').replace(/,\s*\]/g, ']');
+          parsed = JSON.parse(relaxed);
+          parsedSuccessfully = true;
+        } catch (e2) {
+          console.warn('Failed to parse AI JSON response', { error: e, error2: e2, cleaned });
+          parsedSuccessfully = false;
+        }
+      }
+    }
+
+    const resultPayload = parsedSuccessfully ? parsed : cleaned;
+
+    return createSuccessResponse(
+      {
+        response: resultPayload,
+        raw: rawContent,
+        parsed: parsedSuccessfully
+      },
+      'Successfully processed chat request'
     );
+
+  } catch (error: any) {
+    // Improved error handling: classify and return helpful API responses
+    console.error('Chat service error:', error instanceof Error ? error.message : error);
+
+    // Network / API errors
+    const status = error?.status || error?.statusCode || error?.response?.status;
+    if (status === 401 || status === 403) {
+      return createErrorResponse({ message: 'Authentication with OpenAI failed' }, 'OpenAI authentication error');
+    }
+
+    if (status === 429) {
+      return createErrorResponse({ message: 'OpenAI rate limit exceeded' }, 'OpenAI rate limit');
+    }
+
+    if (status >= 500 && status < 600) {
+      return createErrorResponse({ message: 'OpenAI service error' }, 'OpenAI service error');
+    }
+
+    // Validation / client errors
+    if (error?.message && /validation/i.test(error.message)) {
+      return createErrorResponse({ message: error.message }, 'Validation error');
+    }
+
+    // Fallback generic error
+    return createErrorResponse({ message: error?.message || String(error) }, 'Failed to process chat request');
   }
 }

@@ -3,6 +3,17 @@
 */
 
 
+// Load .env in development so environment variables from .env are available to Bun/Node
+try {
+  // Use dotenv when available. This is a no-op if dotenv is not installed.
+  // Import style is used to support ESM/TS.
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const dotenv = require('dotenv');
+  dotenv.config();
+} catch (e) {
+  // ignore if dotenv is not installed in the environment
+}
+
 import { Hono } from 'hono'
 import { logger } from './middleware'
 import { Lander } from './templates'
@@ -51,6 +62,15 @@ app.get('/', (c) => {
 app.get('/debug', (c) => {
   return c.html(<Debug />)
 })
+
+// Development helper: report whether important env vars are loaded (do NOT expose secrets)
+app.get('/debug/env', (c) => {
+  return c.json({
+    openaiConfigured: !!(Bun.env.OPENAI_API_KEY || process.env.OPENAI_API_KEY),
+    storagePath: !!(Bun.env.STORAGE_PATH || process.env.STORAGE_PATH),
+    apiBaseUrl: Bun.env.API_BASE_URL || process.env.API_BASE_URL || null
+  });
+});
 
 
 // Device and Fish routes

@@ -8,11 +8,31 @@ async function createFishWithData(fishData: any): Promise<ApiResponse<any>> {
     const fish = new Fish(fishData);
     const savedFish = await fish.save();
 
-    // TODO: Implement creation of related fish data (colors, predators, fun facts) when a new fish is registered.
-    // These should be stored as separate documents linked to the fish.
-    // Check the fishData object for colors, predators, funFacts, and images arrays and create corresponding records.
-    // YOU NEED TO IMPLEMENT THIS HERE
-    // Related data creation is not implemented - fish will be created without colors, predators, or fun facts
+    // Create related data if present
+    try {
+      if (Array.isArray(fishData.colors) && fishData.colors.length > 0) {
+        const colorDocs = fishData.colors.map((c: any) => ({ fish: savedFish._id, colorName: c.colorName || c }));
+        await FishColor.insertMany(colorDocs);
+      }
+
+      if (Array.isArray(fishData.predators) && fishData.predators.length > 0) {
+        const predatorDocs = fishData.predators.map((p: any) => ({ fish: savedFish._id, predatorName: p.predatorName || p }));
+        await Predator.insertMany(predatorDocs);
+      }
+
+      if (Array.isArray(fishData.funFacts) && fishData.funFacts.length > 0) {
+        const funDocs = fishData.funFacts.map((f: any) => ({ fish: savedFish._id, funFactDescription: f.funFactDescription || f }));
+        await FunFact.insertMany(funDocs);
+      }
+
+      if (Array.isArray(fishData.images) && fishData.images.length > 0) {
+        const imageDocs = fishData.images.map((img: any) => ({ fish: savedFish._id, url: img.url || img }));
+        await FishImage.insertMany(imageDocs);
+      }
+    } catch (relErr) {
+      // Log related data creation errors but don't fail entire operation
+      console.warn('Warning: failed to create related fish data', relErr);
+    }
 
     return createSuccessResponse(savedFish, "Fish and related data created successfully");
   } catch (error) {
@@ -40,13 +60,21 @@ async function checkAndCreateFish(fishData: any): Promise<ApiResponse<any>> {
 // Process fish registration - main function for the API endpoint
 async function processFishRegistration(fishData: any): Promise<ApiResponse<any>> {
   try {
-    // TODO: Validate incoming fish data to ensure all required fields are present and have valid values.
-    // Consider what fields are essential for a fish record.
-    // YOU NEED TO IMPLEMENT THIS HERE
-    
-    // PLACEHOLDER: Basic check only - proper validation needed
-    if (!fishData || !fishData.name) {
-      return createErrorResponse({ message: "Fish name is required - YOU NEED TO IMPLEMENT FULL VALIDATION HERE" }, "Fish name is required");
+    // Basic validation for required fields
+    if (!fishData || typeof fishData !== 'object') {
+      return createErrorResponse({ message: 'Fish data must be an object' }, 'Fish validation failed');
+    }
+
+    if (!fishData.name || typeof fishData.name !== 'string' || fishData.name.trim().length === 0) {
+      return createErrorResponse({ message: 'Fish name is required' }, 'Fish validation failed');
+    }
+
+    // Optional: normalize strings
+    fishData.name = fishData.name.trim();
+
+    // Enforce size fields if present
+    if (fishData.minSize && fishData.maxSize && fishData.minSize > fishData.maxSize) {
+      return createErrorResponse({ message: 'minSize cannot be greater than maxSize' }, 'Fish validation failed');
     }
 
     // Check if fish exists and create if it doesn't
@@ -82,11 +110,15 @@ async function getFishByDevice(deviceId: string): Promise<ApiResponse<any>> {
     // TODO: Construct proper image URLs for each fish entry. Images are stored locally and should be accessible via the API image endpoint.
     // Each fish entry has an imageUrl field that needs to be converted to a full API endpoint URL.
     // YOU NEED TO IMPLEMENT THIS HERE
+    const apiBase = process.env.API_BASE_URL || Bun.env.API_BASE_URL || 'http://localhost:3000/api';
     const fishWithImages = device.fish.map((fishEntry: any) => {
-      const fishData = fishEntry.toObject();
+      const fishData = fishEntry.toObject ? fishEntry.toObject() : fishEntry;
+      // imageUrl may be stored as device-specific relative path like "deviceId/filename.jpg"
+      const rawUrl = fishData.imageUrl || (fishData.fish && fishData.fish.images && fishData.fish.images[0] && fishData.fish.images[0].url) || null;
+      const fullImageUrl = rawUrl ? `${apiBase}/fish/image/${encodeURIComponent(rawUrl)}` : null;
       return {
         ...fishData,
-        imageUrl: "YOU NEED TO IMPLEMENT THIS HERE" // Placeholder - implement proper URL construction
+        imageUrl: fullImageUrl
       };
     });
     
@@ -138,9 +170,30 @@ async function addExistingFishToDevice(deviceId: string, fishName: string, image
     // Consider what time window makes sense and how to track recent additions.
     // You should check if this fish was recently added to this device and skip if it was added too recently.
     const now = new Date();
-    
-    // PLACEHOLDER: Rate limiting not implemented - always adds fish
-    // YOU NEED TO IMPLEMENT THIS HERE
+    // Rate limiting: do not add if the same fish was added within the last X seconds
+    const RATE_LIMIT_SECONDS = Number(process.env.FISH_ADD_RATE_LIMIT_SECONDS || Bun.env.FISH_ADD_RATE_LIMIT_SECONDS || 10);
+    try {
+      const recent = device.fish
+        .filter((f: any) => String(f.fishId) === String(fish._id))
+        .sort((a: any, b: any) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+
+      if (recent.length > 0) {
+        const last = new Date(recent[0].timestamp);
+        const secs = (now.getTime() - last.getTime()) / 1000;
+        if (secs < RATE_LIMIT_SECONDS) {
+          return createSuccessResponse({
+            deviceId: device.deviceIdentifier,
+            fishId: fish._id,
+            fishName: fish.name,
+            imageUrl,
+            timestamp: now,
+            skipped: true
+          }, `Skipped adding fish; last added ${Math.round(secs)} seconds ago`);
+        }
+      }
+    } catch (rlErr) {
+      console.warn('Warning checking rate limit', rlErr);
+    }
 
     // Add fish to device
     device.fish.push({

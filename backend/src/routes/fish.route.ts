@@ -88,27 +88,34 @@ fishRoute.post("/add-existing/:deviceId/:fishName", async (c) => {
 
 // Image proxy endpoint - serves images from local filesystem
 fishRoute.get("/image/*", async (c) => {
-  // TODO: Handle URL encoding and decoding for image paths.
-  // Image paths may contain special characters that need to be properly encoded when used in URLs.
-  // YOU NEED TO IMPLEMENT THIS HERE
-  
-  const imagePath = c.req.path.replace('/api/fish/image/', '');
-  
-  if (!imagePath) {
+  // Decode and sanitize the requested path to avoid issues with special characters and path traversal
+  const rawPath = c.req.path.replace('/api/fish/image/', '');
+  if (!rawPath) {
     return c.json({ error: "Image path is required" }, 400);
+  }
+
+  // Decode URI components and prevent directory traversal
+  let imagePath: string;
+  try {
+    imagePath = decodeURIComponent(rawPath);
+  } catch (e) {
+    return c.json({ error: 'Invalid image path encoding' }, 400);
+  }
+
+  if (imagePath.includes('..')) {
+    return c.json({ error: 'Invalid image path' }, 400);
   }
 
   try {
     const storagePath = Bun.env.STORAGE_PATH || './uploads';
-    // PLACEHOLDER: Using path directly without proper encoding/decoding - may break with special characters
-    const filePath = `${storagePath}/fish-images/${imagePath}`; // YOU NEED TO IMPLEMENT PROPER ENCODING/DECODING
-    
+    const filePath = `${storagePath}/fish-images/${imagePath}`;
+
     // Check if file exists
     const file = Bun.file(filePath);
     const exists = await file.exists();
-    
+
     if (!exists) {
-      return c.json({ error: "Image not found - YOU NEED TO IMPLEMENT PROPER PATH ENCODING/DECODING" }, 404);
+      return c.json({ error: "Image not found" }, 404);
     }
 
     // Read the file
@@ -124,7 +131,7 @@ fishRoute.get("/image/*", async (c) => {
     });
   } catch (error) {
     console.error('Error serving image:', error);
-    return c.json({ error: "Failed to serve image - YOU NEED TO IMPLEMENT PROPER PATH HANDLING" }, 500);
+    return c.json({ error: "Failed to serve image" }, 500);
   }
 });
 

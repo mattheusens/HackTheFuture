@@ -30,13 +30,44 @@ public static class Constant
     
     public static class Api
     {
-        public const string BaseUrl = "https://wafishtrackerapi-dxekchh4dvdjg0g4.francecentral-01.azurewebsites.net/api/";
+        // Default production url
+        private const string ProductionBase = "https://wafishtrackerapi-dxekchh4dvdjg0g4.francecentral-01.azurewebsites.net/api/";
+
+        // When debugging locally, default to localhost:3000. You can override by setting the
+        // environment variable FISHTRACKER_API_BASEURL to a full base url (must include trailing /).
+#if DEBUG
+        private const string DebugDefault = "https://preinsinuative-deloras-oversocial.ngrok-free.dev/api/";
+#else
+        private const string DebugDefault = ProductionBase;
+#endif
+
+        public static string BaseUrl
+        {
+            get
+            {
+                try
+                {
+                    var env = System.Environment.GetEnvironmentVariable("FISHTRACKER_API_BASEURL");
+                    if (!string.IsNullOrWhiteSpace(env))
+                        return env.EndsWith("/") ? env : env + "/";
+                }
+                catch
+                {
+                    // ignore and fall back to default
+                }
+
+                return DebugDefault;
+            }
+        }
+
         public const string UploadFishEndpoint = "fish/upload";
         public const string FormData = "form-data";
         public const string ContentTypeImageJpeg = "image/jpeg";
-        public const string HeaderDeviceId = "\"deviceId\"";
-        public const string HeaderFile = "\"file\"";
-        public const string HeaderFileName = "\"{0}\"";
+
+        // Field names should NOT include extra quotes; ContentDisposition will quote them when needed.
+        public const string HeaderDeviceId = "deviceId";
+        public const string HeaderFile = "file";
+        public const string HeaderFileName = "{0}";
     }
     
     public static class NavRoutes
