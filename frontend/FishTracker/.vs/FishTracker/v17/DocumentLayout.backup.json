@@ -1,0 +1,41 @@
+{
+  "Version": 1,
+  "WorkspaceRootPath": "C:\\Users\\daand\\Desktop\\hackthefuture\\HackTheFuture\\frontend\\FishTracker\\",
+  "Documents": [
+    {
+      "AbsoluteMoniker": "D:0:0:{65F13EB9-9F5E-4ACB-AC7C-C39EA82E1EB3}|FishTracker.App\\FishTracker.App.csproj|c:\\users\\daand\\desktop\\hackthefuture\\hackthefuture\\frontend\\fishtracker\\fishtracker.app\\fishtracker.app.csproj||{FA3CD31E-987B-443A-9B81-186104E8DAC1}|",
+      "RelativeMoniker": "D:0:0:{65F13EB9-9F5E-4ACB-AC7C-C39EA82E1EB3}|FishTracker.App\\FishTracker.App.csproj|solutionrelative:fishtracker.app\\fishtracker.app.csproj||{FA3CD31E-987B-443A-9B81-186104E8DAC1}|"
+    }
+  ],
+  "DocumentGroupContainers": [
+    {
+      "Orientation": 0,
+      "VerticalTabListWidth": 256,
+      "DocumentGroups": [
+        {
+          "DockedWidth": 200,
+          "SelectedChildIndex": 1,
+          "Children": [
+            {
+              "$type": "Bookmark",
+              "Name": "ST:0:0:{aa2115a1-9712-457b-9047-dbb71ca2cdd2}"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 0,
+              "Title": "FishTracker.App.csproj",
+              "DocumentMoniker": "C:\\Users\\daand\\Desktop\\hackthefuture\\HackTheFuture\\frontend\\FishTracker\\FishTracker.App\\FishTracker.App.csproj",
+              "RelativeDocumentMoniker": "FishTracker.App\\FishTracker.App.csproj",
+              "ToolTip": "C:\\Users\\daand\\Desktop\\hackthefuture\\HackTheFuture\\frontend\\FishTracker\\FishTracker.App\\FishTracker.App.csproj",
+              "RelativeToolTip": "FishTracker.App\\FishTracker.App.csproj",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAAAAAAnAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000758|",
+              "WhenOpened": "2025-11-12T10:04:31.74Z",
+              "EditorCaption": ""
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
